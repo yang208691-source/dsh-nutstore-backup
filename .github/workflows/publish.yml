@@ -1,0 +1,58 @@
+# 在 GitHub 网页上"发一个 Release"就自动执行 npm publish —— 不需要本地命令行。
+#
+# 为什么需要这个：npm 没有网页发布界面（只有命令行 `npm publish`）。
+# 把这一步交给 GitHub Actions 之后，整个发布流程就只剩"网页点几下"。
+#
+# 用之前要做的两件网页操作（详见 docs/发布到插件市场-全网页版.md）：
+#   1) npm 网站 → Access Tokens → Generate New Token（Granular，Read and write）→ 复制；
+#   2) GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret
+#      名称填 NPM_TOKEN，值粘贴刚才的 token。
+#
+# 之后每次发布：GitHub 仓库 → Releases → Draft a new release → 填 tag（如 v0.1.0）→ Publish。
+# 注意 tag 去掉前缀要与 package.json 的 version 一致（v0.1.0 ↔ 0.1.0），脚本会校验，
+# 不一致就直接失败——避免"发了 Release 却没发布成功"这种沉默错误。
+
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  # 也允许在网页上手点触发（Actions → 本工作流 → Run workflow）
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 校验 tag 与 package.json 版本一致
+        if: github.event_name == 'release'
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "${TAG#v}" != "$PKG_VERSION" ]; then
+            echo "::error::tag ${TAG} 与 package.json 的 version ${PKG_VERSION} 不一致；请把 package.json 的 version 改成 ${TAG#v} 后重新发布"
+            exit 1
+          fi
+          echo "tag 与版本一致：${TAG}"
+
+      - name: 发布前自检（不依赖真实坚果云账号）
+        run: node test/package-check.mjs
+
+      - name: 单元与集成测试
+        run: node test/run-all.mjs
+
+      - name: 发布到 npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
