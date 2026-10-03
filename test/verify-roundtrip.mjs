@@ -17,8 +17,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const { loadConfig, encodeRemoteName } = await import(lib('config.mjs'))
 const { readManifest, remoteDir, restoreTarget } = await import(lib('backup.mjs'))
 const { WebDavClient } = await import(lib('webdav.mjs'))

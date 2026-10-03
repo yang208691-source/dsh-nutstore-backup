@@ -4,6 +4,7 @@
  */
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const home = process.env.DSH_HOME ?? 'C:\\Users\\yang2\\.dsh'
 process.env.DSH_HOME = home
@@ -11,7 +12,7 @@ process.env.DSH_PROFILE = process.env.DSH_PROFILE ?? 'desktop'
 process.env.DSH_PROFILE_DIR = process.env.DSH_PROFILE_DIR ?? path.join(home, 'profiles', 'desktop')
 delete process.env.DSH_SESSION_CWD
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const config = await import(lib('config.mjs'))
 
 console.log('DSH_HOME            =', process.env.DSH_HOME)

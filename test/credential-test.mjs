@@ -16,11 +16,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'nsb-cred-'))
 process.env.DSH_HOME = path.join(sandbox, '.dsh')
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const credential = await import(lib('credential.mjs'))
 const { secretFallbackPath } = await import(lib('config.mjs'))
 

@@ -10,8 +10,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
-const { WebDavClient } = await import(pathToFileURL('D:/My Agent/dev/dsh-nutstore-backup/lib/webdav.mjs').href)
+const { WebDavClient } = await import(pathToFileURL(path.join(pluginDir, 'lib', 'webdav.mjs')).href)
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'nsb-stream-'))
 const filePath = path.join(sandbox, 'payload.bin')

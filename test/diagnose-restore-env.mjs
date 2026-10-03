@@ -8,9 +8,10 @@
  */
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
-const module = await import(pathToFileURL('D:/My Agent/dev/dsh-nutstore-backup/lib/backup.mjs').href)
-const config = { workspaceDir: 'D:\\My Agent' }
+const module = await import(pathToFileURL(path.join(pluginDir, 'lib', 'backup.mjs')).href)
+const config = { workspaceDir: process.argv[2] ?? '/tmp/example-workspace' }
 const nested = 'sessions/--D-My~0020Agent--/03e6043f-e974-4e4f-b706-9b24dd0a6456/session.v4.jsonl.zstd'
 const flat = 'profile/cordis.patch.yml'
 

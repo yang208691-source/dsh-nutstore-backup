@@ -12,6 +12,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const failures = []
 function check(label, condition, detail = '') {
@@ -30,7 +31,7 @@ process.env.USERPROFILE = simulatedUserProfile
 process.env.DSH_PROFILE = process.env.DSH_PROFILE ?? 'desktop'
 delete process.env.DSH_PROFILE_DIR
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const { loadConfig } = await import(lib('config.mjs'))
 const { readManifest, restoreTarget } = await import(lib('backup.mjs'))
 const { WebDavClient } = await import(lib('webdav.mjs'))

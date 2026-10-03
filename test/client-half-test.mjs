@@ -248,11 +248,11 @@ let statePayload = {
     account: '',
     remoteRoot: '/dsh-backup',
     machine: 'my-pc',
-    workspaceDir: 'D:\\My Agent',
+    workspaceDir: '/tmp/example-workspace',
     sources: { sessions: true, profileConfig: true, workspaceMemory: true, pluginSource: true },
   },
   sources: {
-    machine: 'my-pc', remoteDir: '/dsh-backup/my-pc', workspaceDir: 'D:\\My Agent',
+    machine: 'my-pc', remoteDir: '/dsh-backup/my-pc', workspaceDir: '/tmp/example-workspace',
     profile: 'desktop', dshHome: 'C:\\Users\\x\\.dsh', files: 1234, bytes: 5678901,
     roots: [{ key: 'sessions', label: '会话记录', count: 1200, bytes: 5000000 }], skipped: [],
   },
@@ -368,7 +368,7 @@ statePayload = {
   loggedIn: false,
   account: '',
   password: { service: 'available', configured: false, label: '未登录：还没有保存应用密码' },
-  config: { server: 'https://dav.jianguoyun.com/dav', account: '', remoteRoot: '/dsh-backup', machine: 'my-pc', workspaceDir: 'D:\\My Agent', sources: {} },
+  config: { server: 'https://dav.jianguoyun.com/dav', account: '', remoteRoot: '/dsh-backup', machine: 'my-pc', workspaceDir: '/tmp/example-workspace', sources: {} },
   sources: { machine: 'my-pc', remoteDir: '/dsh-backup/my-pc', files: 52, bytes: 640000, roots: [], skipped: [] },
 }
 mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, undefined)
@@ -434,7 +434,7 @@ console.log('\n[12] 已登录时显示账号，避免"不知道用的是哪个�
 statePayload = {
   ok: true, loggedIn: true, account: 'me@example.com',
   password: { service: 'available', configured: true, label: '已登录（密码存放在 DSH 凭据库 nutstore-backup/app-password）' },
-  config: { server: 'https://dav.jianguoyun.com/dav', account: 'me@example.com', remoteRoot: '/dsh-backup', machine: 'my-pc', workspaceDir: 'D:\\My Agent', sources: {} },
+  config: { server: 'https://dav.jianguoyun.com/dav', account: 'me@example.com', remoteRoot: '/dsh-backup', machine: 'my-pc', workspaceDir: '/tmp/example-workspace', sources: {} },
   sources: { machine: 'my-pc', remoteDir: '/dsh-backup/my-pc', files: 5, bytes: 100, roots: [], skipped: [] },
 }
 mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, undefined)

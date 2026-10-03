@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const realFile = path.join(os.homedir(), '.dsh', '.credentials.yaml')
 if (!fs.existsSync(realFile)) {
@@ -23,7 +24,7 @@ fs.mkdirSync(dshHome, { recursive: true })
 const originalText = fs.readFileSync(realFile, 'utf8')
 fs.writeFileSync(copyFile, originalText, { mode: 0o600 })
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const { createCredentialBridge, CREDENTIAL_RECORD } = await import(lib('credential-store.mjs'))
 
 const bridge = createCredentialBridge({ file: copyFile, profileDir: 'C:/Users/yang2/.dsh/profiles/desktop' })

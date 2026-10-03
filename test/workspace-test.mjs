@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const failures = []
 function check(label, condition, detail = '') {
@@ -26,7 +27,7 @@ function check(label, condition, detail = '') {
   }
 }
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const config = await import(lib('config.mjs'))
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'nsb-ws-'))

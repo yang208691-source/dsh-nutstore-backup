@@ -8,13 +8,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'nsb-dbg-bridge-'))
 process.env.DSH_HOME = sandbox
 process.env.DSH_PROFILE = 'desktop'
 process.env.DSH_PROFILE_DIR = path.join(sandbox, 'profiles', 'desktop')
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const config = await import(lib('config.mjs'))
 const { createCredentialBridge } = await import(lib('credential-store.mjs'))
 

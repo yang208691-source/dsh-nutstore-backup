@@ -1,6 +1,6 @@
 {
   "name": "dsh-nutstore-backup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "坚果云（Nutstore WebDAV）备份插件：在 DSH 设置里登录坚果云，增量备份会话记录、插件配置与工作区记忆，并在新机器上一键恢复。",
   "type": "module",
   "main": "lib/index.mjs",

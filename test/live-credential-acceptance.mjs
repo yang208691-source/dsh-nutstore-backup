@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pluginDir } from './helpers/paths.mjs'
 
 const WEB = process.env.DSH_WEB_URL ?? 'http://127.0.0.1:19387'
 const realFile = path.join(os.homedir(), '.dsh', '.credentials.yaml')
@@ -40,7 +41,7 @@ const originalRecords = new Set(recordLines(originalText))
 console.log(`真实凭据文件：${realFile}`)
 console.log(`原有记录数：${originalRecords.size}`)
 
-const lib = (file) => pathToFileURL(path.join('D:/My Agent/dev/dsh-nutstore-backup/lib', file)).href
+const lib = (file) => pathToFileURL(path.join(pluginDir, 'lib', file)).href
 const { createCredentialBridge, CREDENTIAL_RECORD } = await import(lib('credential-store.mjs'))
 const bridge = createCredentialBridge({ file: realFile, profileDir: path.join(os.homedir(), '.dsh', 'profiles', 'desktop') })
 if (bridge.unsupported === true) {
