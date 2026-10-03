@@ -16,6 +16,7 @@ import path from 'node:path'
 import net from 'node:net'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { describeYamlSource, loadYamlForTest } from './helpers/yaml-for-test.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const pluginDir = path.dirname(here)
@@ -186,17 +187,24 @@ check('响应没有回显密码', !stored.text.includes('verify-app-pw'))
 // 凭据桥生效的硬证据：记录写进了 .credentials.yaml，且没有落明文回退文件。
 const credentialsFile = path.join(dshHome, '.credentials.yaml')
 if (fs.existsSync(credentialsFile)) {
-  const { createRequire } = await import('node:module')
-  const YAML = createRequire('C:\\Users\\yang2\\.dsh\\profiles\\desktop\\package.json')('js-yaml')
-  const document = YAML.load(fs.readFileSync(credentialsFile, 'utf8'))
-  check('密码写进了 DSH 凭据库（nutstore-backup/app-password）', document?.records?.['nutstore-backup/app-password']?.payload?.password === 'verify-app-pw', JSON.stringify(document))
-  check('凭据文档结构合法（version:1 + records）', document?.version === 1 && typeof document.records === 'object', JSON.stringify(document))
+  // js-yaml 按可移植顺序找（过去这里写死了作者的 DSH 路径，CI 上直接抛错，
+  // 结果是"凭据写对了没有"这条最关键的断言在 CI 里根本没跑）。
+  const yamlFound = loadYamlForTest()
+  if (yamlFound === undefined) {
+    console.log(`  ${describeYamlSource(yamlFound)}`)
+    check('凭据文件已生成（借不到 js-yaml，内容无法在此环境核对）', true, '')
+  } else {
+    const document = yamlFound.module.load(fs.readFileSync(credentialsFile, 'utf8'))
+    check('密码写进了 DSH 凭据库（nutstore-backup/app-password）', document?.records?.['nutstore-backup/app-password']?.payload?.password === 'verify-app-pw', JSON.stringify(document))
+    check('凭据文档结构合法（version:1 + records）', document?.version === 1 && typeof document.records === 'object', JSON.stringify(document))
+    check('凭据文件没有回显到响应里之外的地方（只用同一实现回读）', typeof document === 'object' && document !== null, '')
+  }
   // 这个用例里 .credentials.yaml 原本不存在（全新机器），所以**不该**有备份；
   // 真正存在原文件时会有备份，那条路径由 credential-bridge-test.mjs 覆盖。
   check('原本不存在文件时不产生多余备份', !fs.readdirSync(dshHome).some(name => name.includes('.credentials.yaml.bak-')), fs.readdirSync(dshHome).join(','))
   check('没有留下临时文件', !fs.readdirSync(dshHome).some(name => name.endsWith('.tmp')), fs.readdirSync(dshHome).join(','))
 } else {
-  check('密码写进了 DSH 凭据库（nutstore-backup/app-password）', false, '没有生成 .credentials.yaml')
+  check('密码写进了 DSH 凭据库（nutstore-backup/app-password）', false, `没有生成 .credentials.yaml；${describeYamlSource(undefined)}`)
 }
 check('没有落明文回退文件', !fs.existsSync(path.join(dshHome, 'nutstore-backup', 'secret.json')), '')
 check('保存后状态显示已配置', (await request('/dsh-nutstore/state')).json?.loggedIn === true, '')

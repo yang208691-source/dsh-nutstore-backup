@@ -24,6 +24,9 @@
     "test": "node test/run-all.mjs",
     "verify": "node lib/server.mjs --open"
   },
+  "devDependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "keywords": [
     "dsh",
     "dsh-plugin",

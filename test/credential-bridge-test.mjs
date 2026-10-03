@@ -14,8 +14,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
+import { describeYamlSource, loadYamlForTest } from './helpers/yaml-for-test.mjs'
 
 const failures = []
 function check(label, condition, detail = '') {
@@ -44,14 +44,24 @@ const initialDocument = {
     'deepseek-account-platform/default': { kind: 'grant', payload: { version: 1, token: 'ZmFrZS10b2tlbi12YWx1ZQ==', issuer: 'https://platform.deepseek.com' } },
   },
 }
-// 用真实实现把初始文件写出来（保证起点就是 DSH 认可的格式）
-const yamlRequire = createRequire('C:\\Users\\yang2\\.dsh\\profiles\\desktop\\package.json')
-const YAML = yamlRequire('js-yaml')
-fs.writeFileSync(credentialsFile, YAML.dump(initialDocument, { lineWidth: 120, sortKeys: false }), { mode: 0o600 })
-const initialText = fs.readFileSync(credentialsFile, 'utf8')
+// 用真实实现把初始文件写出来（保证起点就是 DSH 认可的格式）。
+// js-yaml 按可移植顺序查找：插件自己的 devDependency → 本机 DSH profile → 系统全局。
+// 找不到时**不假装通过**：桥会如实降级成 unsupported，相关断言会明确报出原因。
+const yamlFound = loadYamlForTest()
+const YAML = yamlFound?.module
+console.log(`  ${describeYamlSource(yamlFound)}`)
+if (YAML === undefined) {
+  console.log('  → 这一套没有 js-yaml，无法验证"写进凭据库"；在插件目录跑 npm ci 后就会验证。')
+}
+const profileDirForTest = path.join(os.tmpdir(), `nsb-profile-${process.pid}`)
+fs.mkdirSync(profileDirForTest, { recursive: true })
+const initialText = YAML === undefined
+  ? JSON.stringify(initialDocument)
+  : YAML.dump(initialDocument, { lineWidth: 120, sortKeys: false })
+fs.writeFileSync(credentialsFile, initialText, { mode: 0o600 })
 
 console.log('\n[1] 桥可构造，且识别出记录地址与文件')
-const bridge = createCredentialBridge({ file: credentialsFile, profileDir: 'C:\\Users\\yang2\\.dsh\\profiles\\desktop' })
+const bridge = createCredentialBridge({ file: credentialsFile, profileDir: profileDirForTest })
 check('桥可用（借到了 js-yaml）', bridge.unsupported !== true, String(bridge.reason ?? ''))
 check('文件路径正确', bridge.file === credentialsFile, String(bridge.file))
 check('记录地址与插件一致', CREDENTIAL_RECORD === 'nutstore-backup/app-password', CREDENTIAL_RECORD)

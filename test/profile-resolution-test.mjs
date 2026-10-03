@@ -9,11 +9,29 @@
  * 用法：node test/profile-resolution-test.mjs [profileDir]
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-const profileDir = process.argv[2] ?? process.env.DSH_PROFILE_DIR ?? 'C:\\Users\\yang2\\.dsh\\profiles\\desktop'
+/**
+ * profile 目录：命令行参数 > DSH_PROFILE_DIR > DSH_HOME/profiles/<DSH_PROFILE|desktop> > ~/.dsh/...
+ *
+ * 不硬编码作者机器路径：CI 上没有 DSH 安装，硬编码会让这个套件一跑就红。
+ * 找不到 profile 时下面会明确报"未安装 DSH profile"，而不是伪装成解析失败。
+ */
+function resolveProfileDir() {
+  if (typeof process.argv[2] === 'string' && process.argv[2].trim() !== '') return path.resolve(process.argv[2])
+  if (typeof process.env.DSH_PROFILE_DIR === 'string' && process.env.DSH_PROFILE_DIR.trim() !== '') return path.resolve(process.env.DSH_PROFILE_DIR.trim())
+  const home = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME.trim() !== ''
+    ? path.resolve(process.env.DSH_HOME.trim())
+    : path.join(os.homedir(), '.dsh')
+  return path.join(home, 'profiles', process.env.DSH_PROFILE ?? 'desktop')
+}
+
+const profileDir = resolveProfileDir()
 const packageName = 'dsh-nutstore-backup'
+/** CI 上没有 DSH profile：这一整套跳过（不算失败），但要说明清楚而不是静默。 */
+const hasProfile = fs.existsSync(path.join(profileDir, 'package.json'))
 
 const failures = []
 function check(label, condition, detail = '') {
@@ -27,7 +45,15 @@ function check(label, condition, detail = '') {
 
 console.log(`\nprofile: ${profileDir}`)
 const profileManifestPath = path.join(profileDir, 'package.json')
-check('profile package.json 存在', fs.existsSync(profileManifestPath))
+
+if (!hasProfile) {
+  console.log('  这台机器上没有这个 DSH profile（CI 就是这种情况），跳过挂载预检——不算失败。')
+  console.log('  发布前请在装有 DSH 的机器上跑：node test/profile-resolution-test.mjs')
+  console.log('\n⏭️ 跳过（无 DSH profile）')
+  process.exit(0)
+}
+
+check('profile package.json 存在', true)
 
 const manifest = JSON.parse(fs.readFileSync(profileManifestPath, 'utf8'))
 const bundles = manifest.dsh?.profile?.bundles ?? []
