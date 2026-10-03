@@ -17,8 +17,15 @@ name: Publish to npm
 on:
   release:
     types: [published]
-  # 也允许在网页上手点触发（Actions → 本工作流 → Run workflow）
+  # 也允许在网页上手点触发（Actions → 本工作流 → Run workflow）。
+  # 勾上「试运行」就只跑测试与打包检查、**不发布**——用来在设置 NPM_TOKEN 之前
+  # 先确认这套测试在 GitHub 的机器上能跑通（本机绿 ≠ CI 绿，环境不同）。
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '试运行：只跑测试与打包，不发布到 npm'
+        type: boolean
+        default: true
 
 jobs:
   publish:
@@ -34,6 +41,12 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+
+      # 只为测试装 devDependencies（js-yaml）："凭据写进 DSH 凭据库"那几条断言需要它。
+      # 发布出去的文件里**不含** js-yaml（files 只有 lib/、cordis.patch.yml、README.md），
+      # 插件在真机上是从 DSH 自己的 profile 借 js-yaml 的，运行时依然是零依赖。
+      - name: 安装开发依赖
+        run: npm install --no-audit --no-fund
 
       - name: 校验 tag 与 package.json 版本一致
         if: github.event_name == 'release'
@@ -52,7 +65,46 @@ jobs:
       - name: 单元与集成测试
         run: node test/run-all.mjs
 
+      # 打包内容核对：npm 实际会发出去哪些文件（不发布也安全）
+      - name: 打包内容核对
+        run: npm pack --dry-run
+
+      - name: 试运行摘要
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "试运行完成：自检、测试、打包核对都跑过了，**没有发布到 npm**。" >> "$GITHUB_STEP_SUMMARY"
+          echo "要真正发布：先设置 NPM_TOKEN secret，再发一个 tag 与 package.json 版本一致的 Release。" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 发布到 npm
+        if: github.event_name == 'release'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 发布成功后再从 npm 真实安装一次，确认 registry 上那份**确实可用**：
+      # 文件齐全、cordis.patch.yml 在且写了包名、两半入口都在。
+      # 这是"我自己装过一次"的自动化版本——审稿人与用户最关心的就是这一条。
+      - name: 回装验证（从 npm 取刚发布的包）
+        if: github.event_name == 'release'
+        run: |
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y > /dev/null
+          # 刚 publish 完，latest 就是我们刚发的版本
+          npm install dsh-nutstore-backup --no-audit --no-fund
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const dir = path.dirname(require.resolve('dsh-nutstore-backup/package.json'));
+            const must = ['package.json', 'cordis.patch.yml', 'lib/index.mjs', 'lib/client.js', 'README.md'];
+            const missing = must.filter((f) => !fs.existsSync(path.join(dir, f)));
+            const pkg = require(path.join(dir, 'package.json'));
+            const patch = fs.readFileSync(path.join(dir, 'cordis.patch.yml'), 'utf8');
+            const problems = [];
+            if (missing.length > 0) problems.push('缺文件: ' + missing.join(','));
+            if (!patch.includes('dsh-nutstore-backup')) problems.push('cordis.patch.yml 里没有包名');
+            if (!patch.includes('insert:')) problems.push('cordis.patch.yml 里没有 insert');
+            if (pkg.dsh?.bundle?.patch !== './cordis.patch.yml') problems.push('dsh.bundle.patch 不对');
+            if (pkg.dsh?.client?.platform !== 'web') problems.push('dsh.client.platform 不是 web');
+            if (problems.length > 0) { console.error('❌ 发布出来的包有问题: ' + problems.join(' | ')); process.exit(1); }
+            console.log('✅ npm 上的包可安装且文件齐全：' + pkg.name + '@' + pkg.version);
+          "
