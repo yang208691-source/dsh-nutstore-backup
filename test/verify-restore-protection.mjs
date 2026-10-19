@@ -8,6 +8,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { pluginDir } from './helpers/paths.mjs'
 
@@ -31,6 +32,17 @@ const manifest = await readManifest(new WebDavClient({ server: config.server, ac
 console.log(`云端快照生成于 ${manifest.createdAt}（这是"上一次备份时"的状态）`)
 console.log('')
 
+/** 与 lib/backup.mjs 的恢复判据一致：大小相同还要再比 sha256。 */
+function sha256OfFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    stream.on('error', reject)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
 const PROTECTION_WINDOW_MS = 2000
 const wouldOverwrite = []
 const wouldProtect = []
@@ -47,8 +59,12 @@ for (const entry of manifest.files ?? []) {
     continue // 本机没有 → 会新建，不算"覆盖"
   }
   if (stat.size === entry.size) {
-    wouldSkipSameSize.push(entry.relative)
-    continue
+    // 老清单没有 hash 时才只能按大小跳过；有 hash 就必须再确认内容。
+    if (typeof entry.sha256 !== 'string' || await sha256OfFile(target) === entry.sha256) {
+      wouldSkipSameSize.push(entry.relative)
+      continue
+    }
+    // 大小相同但内容不同：继续走下面的 mtime 保护 / 覆盖判断。
   }
   if (typeof entry.mtimeMs !== 'number' || entry.mtimeMs <= 0) {
     noEntryMtime.push(entry.relative)
@@ -63,7 +79,7 @@ for (const entry of manifest.files ?? []) {
   }
 }
 
-console.log(`大小相同、本来就会跳过        ${wouldSkipSameSize.length} 个`)
+console.log(`内容相同（或无哈希）、会跳过  ${wouldSkipSameSize.length} 个`)
 console.log(`大小不同、会被新保护拦住      ${wouldProtect.length} 个   ← 这些不会再用旧快照覆盖本机`)
 console.log(`大小不同、确实会被云端覆盖    ${wouldOverwrite.length} 个   ← 云端那份更新，覆盖是正确方向`)
 if (noEntryMtime.length > 0) console.log(`（其中 ${noEntryMtime.length} 个清单条目没有 mtime，无法判断，按覆盖处理）`)

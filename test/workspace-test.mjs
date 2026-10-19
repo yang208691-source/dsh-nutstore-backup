@@ -182,6 +182,35 @@ console.log('\n[8] 恢复路径映射：宿主没有 DSH_HOME 时也必须能映
   else process.env.USERPROFILE = savedProfile
 }
 
+console.log('\n[9] 恢复路径拒绝穿越')
+{
+  const backup = await import(lib('backup.mjs'))
+  makeHome('path-safety', undefined)
+  const targetWorkspace = path.join(sandbox, 'path-safety-workspace')
+  fs.mkdirSync(targetWorkspace, { recursive: true })
+  const pluginConfig = { workspaceDir: targetWorkspace }
+
+  const bad = [
+    'sessions/../../evil.txt',
+    'sessions/foo/../../../evil.txt',
+    'sessions/..\\..\\evil.txt',
+    'sessions//evil.txt',
+    'sessions/./evil.txt',
+    'sessions/C:/evil.txt',
+    '/sessions/evil.txt',
+    'sessions/',
+  ]
+  const results = bad.map(relative => backup.restoreTarget(relative, pluginConfig))
+  check('危险相对路径全部返回 undefined', results.every(result => result === undefined), bad.filter((relative, index) => results[index] !== undefined).join(', '))
+
+  const good = backup.restoreTarget('sessions/--ws--/id/session.v4.jsonl.zstd', pluginConfig)
+  check('正常会话路径仍然能映射', typeof good === 'string' && good.endsWith('session.v4.jsonl.zstd'), String(good))
+  const inWorkspace = backup.restoreTarget('workspace/memory/FACT.md', pluginConfig)
+  check('工作区路径仍然落在工作区内', typeof inWorkspace === 'string' && inWorkspace.startsWith(path.resolve(targetWorkspace)), String(inWorkspace))
+  const dotDotName = backup.restoreTarget('workspace/memory/..notes.txt', pluginConfig)
+  check('以 .. 开头的正常文件名不被误杀', typeof dotDotName === 'string' && dotDotName.endsWith('..notes.txt'), String(dotDotName))
+}
+
 fs.rmSync(sandbox, { recursive: true, force: true })
 
 if (failures.length > 0) {

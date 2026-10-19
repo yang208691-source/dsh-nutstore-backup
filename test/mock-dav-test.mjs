@@ -261,6 +261,19 @@ check('插件源码在范围内', relatives.includes('pluginsrc/lib/index.mjs') 
 check('插件源码里的 node_modules 被排除', !relatives.some(rel => rel.startsWith('pluginsrc/node_modules')))
 check('node_modules 里的大文件没被算进去', plan.bytes < 1_000_000, `bytes=${plan.bytes}`)
 
+console.log('\n[2b] 超过单文件上限：必须记录在 skipped，不能静默消失')
+{
+  const huge = path.join(workspace, 'memory', 'HUGE.bin')
+  fs.writeFileSync(huge, '')
+  fs.truncateSync(huge, 64 * 1024 * 1024 + 1)
+  const hugeScan = scanBackupFiles(config)
+  check('超大文件没有进入备份列表', !hugeScan.files.some(file => file.relative === 'workspace/memory/HUGE.bin'))
+  check('超大文件被记录为 skipped', hugeScan.skipped.some(item => item.path === huge && item.reason.includes('超过单文件上限')), JSON.stringify(hugeScan.skipped.filter(item => item.path === huge)))
+  fs.rmSync(huge, { force: true })
+  const cleanScan = scanBackupFiles(config)
+  check('删掉超大文件后 skipped 恢复为空', cleanScan.skipped.length === 0, JSON.stringify(cleanScan.skipped))
+}
+
 console.log('\n[3] 首次备份（全量）')
 const first = await runBackup({ client, config })
 console.log(`  dir=${first.dir} uploaded=${first.uploaded} skipped=${first.skipped} bytes=${first.uploadedBytes} failed=${first.failed.length} ms=${first.ms}`)
@@ -367,6 +380,32 @@ console.log('\n[5c] 元数据快路径：没变的文件连读都不读')
   await runBackup({ client, config })
 }
 
+console.log('\n[5d] 旧清单没有 sha256：不能按大小判等，必须重传一次')
+{
+  // 升级前的清单只有 size、没有 sha256。若文件在升级前等长改过，
+  // 这一轮如果按 size 判等，就会把新哈希写回清单、远端却停在旧内容，之后永远不传。
+  const legacyRelative = 'workspace/memory/LEGACY-SAME-SIZE.txt'
+  const legacyTarget = path.join(workspace, 'memory', 'LEGACY-SAME-SIZE.txt')
+  fs.writeFileSync(legacyTarget, 'enabled\n')
+  const seeded = await runBackup({ client, config })
+  check('先把文件与 sha256 写进清单', seeded.uploaded === 1, `uploaded=${seeded.uploaded}`)
+
+  const legacyManifest = await readManifest(client, config)
+  for (const entry of legacyManifest.files) delete entry.sha256
+  await client.put(`${remoteDir(config)}/manifest.json`, Buffer.from(`${JSON.stringify(legacyManifest, null, 2)}\n`, 'utf8'))
+
+  fs.writeFileSync(legacyTarget, 'disable\n') // 8 字节，内容不同
+  const legacyRun = await runBackup({ client, config })
+  check('无哈希清单触发一次全量重传（宁可贵一次，也不漏）', legacyRun.uploaded === plan.files + 1, `uploaded=${legacyRun.uploaded} expected=${plan.files + 1}`)
+  const remoteLegacy = store.get(`${remoteDir(config)}/${encodeRemoteName(legacyRelative)}`)
+  check('等长改动后的内容真的到了远端', remoteLegacy?.toString('utf8') === 'disable\n', JSON.stringify(remoteLegacy?.toString('utf8')))
+
+  const afterLegacy = await runBackup({ client, config })
+  check('新清单带哈希后回到零上传', afterLegacy.uploaded === 0, `uploaded=${afterLegacy.uploaded}`)
+  fs.rmSync(legacyTarget, { force: true })
+  await runBackup({ client, config })
+}
+
 console.log('\n[6] listRemoteMachines / 读取清单')
 const machines = await listRemoteMachines(client, config)
 check('能看到 test-machine 目录', machines.some(machine => machine.name === 'test-machine'), JSON.stringify(machines))
@@ -392,6 +431,52 @@ check('被改动的文件恢复成远端内容', fs.readFileSync(localJournal, '
 check('被删除的文件被恢复', fs.existsSync(path.join(workspace, 'memory', 'FACT.md')))
 check('未变化的文件被跳过', restored.skipped.length > 0, `skipped=${restored.skipped.length}`)
 check('覆盖前做了回收站备份', fs.existsSync(path.join(dshHome, 'nutstore-backup', 'restore-trash', 'workspace__memory__JOURNAL.jsonl')))
+
+console.log('\n[8b] 同大小但内容不同：恢复必须按 sha256 判断，不能只看大小')
+{
+  const fact = path.join(workspace, 'memory', 'FACT.md')
+  const good = '# facts\n'
+  fs.writeFileSync(fact, 'LOCAL!!!') // 与 '# facts\n' 一样是 8 字节
+  const old = new Date(Date.now() - 3_600_000)
+  fs.utimesSync(fact, old, old) // 本机更旧，避免撞上"本机更新保护"
+
+  const sameSize = await runRestore({ client, config })
+  check('同大小脏文件被覆盖回云端内容', fs.readFileSync(fact, 'utf8') === good, JSON.stringify(fs.readFileSync(fact, 'utf8')))
+  check('恢复结果把它算作 overwrite', sameSize.restored.some(item => item.relative === 'workspace/memory/FACT.md' && item.kind === 'overwrite'), JSON.stringify(sameSize.restored.filter(item => item.relative === 'workspace/memory/FACT.md')))
+
+  // 远端对象同长度损坏：下载后必须用 sha256 拦住，不能 rename 成本机文件。
+  const factKey = `${remoteDir(config)}/${encodeRemoteName('workspace/memory/FACT.md')}`
+  const goodRemote = store.get(factKey)
+  store.set(factKey, Buffer.from('# FAKE!\n')) // 同样 8 字节
+  fs.writeFileSync(fact, 'LOCAL!!!')
+  fs.utimesSync(fact, old, old)
+
+  const corrupt = await runRestore({ client, config })
+  check('远端同长度损坏被 sha256 拒绝', corrupt.failed.some(item => item.relative === 'workspace/memory/FACT.md'), JSON.stringify(corrupt.failed))
+  check('本机文件没有被写成坏内容', fs.readFileSync(fact, 'utf8') === 'LOCAL!!!', JSON.stringify(fs.readFileSync(fact, 'utf8')))
+  check('哈希失败不留 .nbpart 临时文件', fs.readdirSync(path.dirname(fact)).every(name => !name.includes('.nbpart')), fs.readdirSync(path.dirname(fact)).join(','))
+
+  store.set(factKey, goodRemote)
+  const recovered = await runRestore({ client, config })
+  check('远端恢复正常后能补回该文件', recovered.ok === true && fs.readFileSync(fact, 'utf8') === good, JSON.stringify(recovered.failed))
+}
+
+console.log('\n[8c] manifest 路径/对象名不可信：穿越与错配都必须拒绝')
+{
+  const originalManifest = await readManifest(client, config)
+  const hostileManifest = JSON.parse(JSON.stringify(originalManifest))
+  hostileManifest.files.push(
+    { name: encodeRemoteName('sessions/../../evil.txt'), relative: 'sessions/../../evil.txt', size: 1, mtimeMs: 0 },
+    { name: encodeRemoteName('workspace/memory/OTHER.txt'), relative: 'workspace/memory/NAME-MISMATCH.txt', size: 1, mtimeMs: 0 },
+  )
+  await client.put(`${remoteDir(config)}/manifest.json`, Buffer.from(`${JSON.stringify(hostileManifest, null, 2)}\n`, 'utf8'))
+
+  const hostile = await runRestore({ client, config, dryRun: true })
+  check('路径穿越条目被拒绝', hostile.failed.some(item => item.relative === 'sessions/../../evil.txt'), JSON.stringify(hostile.failed))
+  check('name 与 relative 不匹配的条目被拒绝', hostile.failed.some(item => item.relative === 'workspace/memory/NAME-MISMATCH.txt'), JSON.stringify(hostile.failed))
+
+  await client.put(`${remoteDir(config)}/manifest.json`, Buffer.from(`${JSON.stringify(originalManifest, null, 2)}\n`, 'utf8'))
+}
 
 function remoteJournalPath() {
   // 从远端 store 里取出来落到临时文件，便于比对

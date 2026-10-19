@@ -8,6 +8,9 @@
 - **换机恢复**：在新电脑的 DSH 里登录同一个坚果云，点一下「查看云端备份 → 从该备份恢复」，对话历史与记忆就回来了；
 - 也可以直接让模型调用 `nutstore_backup` / `nutstore_restore` 等工具来干这些事。
 
+> **它不是整目录/整盘备份**：工作区里的普通文档、`~/.dsh/attachments`（聊天图片/附件）默认不在范围内；
+> 要备份资料请用坚果云客户端，或把它们加进 `extraPaths`。完整边界见 §7。
+
 零第三方依赖：WebDAV 用 Node 自带的 `node:http(s)` 实现，不需要 npm 安装任何东西。
 
 ---
@@ -210,7 +213,7 @@ node lib/server.mjs --open            # 默认 http://127.0.0.1:19731
 | `pluginsrc` | 本插件自己的源码（`lib/`、`package.json`、`cordis.patch.yml`、`README.md`） | `$DSH_HOME/nutstore-backup/restored-plugins/` |
 | `extra-*` | 你自己加进 `extraPaths` 的目录/文件 | `$DSH_HOME/nutstore-backup/restored-extra/` |
 
-刻意**不备份**：`node_modules`、`.git`、`.pnpm`、各种 cache/tmp、`.plugin-manager` 日志、`.dsh-market`、附件二进制、以及工作区里的普通文档（`文档/`、`排故档案/` 等——这些是"资料"不是"记忆"，要的话把目录加进 `extraPaths`）。单个文件上限 64 MB。
+刻意**不备份**：`node_modules`、`.git`、`.pnpm`、各种 cache/tmp、`.plugin-manager` 日志、`.dsh-market`、附件二进制、以及工作区里的普通文档（`文档/`、`排故档案/` 等——这些是"资料"不是"记忆"，要的话把目录加进 `extraPaths`）。单个文件上限 64 MB；超过上限的文件会记入 `skipped` 并在设置页提示，不再静默跳过。
 
 ---
 
@@ -258,12 +261,12 @@ node test/run-all.mjs
 
 | 套件 | 覆盖 |
 | --- | --- |
-| `mock-dav-test.mjs` | 起一个本地 mock WebDAV，验证 PROPFIND/MKCOL/PUT/GET/DELETE、扫描范围（排除 node_modules/大文件）、首轮全量、二轮零上传、改一个文件只传一个、`listRemoteMachines`、dryRun、真实恢复、跨机器恢复、回收站 |
+| `mock-dav-test.mjs` | 起一个本地 mock WebDAV，验证 PROPFIND/MKCOL/PUT/GET/DELETE、扫描范围（排除 node_modules/大文件、超大文件记入 `skipped`）、首轮全量、二轮零上传、改一个文件只传一个、旧清单无哈希时强制重传、同大小内容恢复、远端同长度损坏被 sha256 拒绝、manifest 路径穿越/对象名错配被拒绝、`listRemoteMachines`、dryRun、真实恢复、跨机器恢复、回收站 |
 | `host-apply-test.mjs` | 用假 ctx 调真实 `apply()`：5 个工具与全部路由都注册、`/state`→`/config`→`/password`→`/test`→`/backup`→`/machines`→`/restore` 全链路、伪造 Host 的写请求被 403、工具 `execute` 可直调 |
 | `client-half-test.mjs` | 模拟宿主 `__ModuleLoader__`/`require`/cordis ctx，用自带的极简 React 运行时**真的渲染并点击**这个设置页：注册形态、`id`/`order`/`label` thunk/locale、首次拉 `/state`、点「测试连接」「保存并登录」「立即备份」发出的请求、错误是否显示 |
 | `credential-test.mjs` | 应用密码两条路径：有凭据服务（`modifyRecord` + `<scope>/<id>` 记录 + 引用层环境变量）、无凭据服务（0600 明文回退并如实标注）、清除、服务恢复后清理回退文件 |
 | `credential-bridge-test.mjs` | 凭据桥安全性：与真实文件同构时**原有记录逐项不变**、四类非法文档**一律拒写且原文件不动**、写前留 `.bak`、插件的 `loadPassword` 能端到端读回、空文件/不存在也能安全开始、借不到 js-yaml 时如实 `unsupported` |
-| `workspace-test.mjs` | 工作区目录解析（含"挑真有记忆的工作区而非 `defaultWorkspaceId`"）+ **恢复路径映射**：`DSH_HOME` 缺失时（桌面壳启动的宿主就是这样）也必须能映射，且显式 `DSH_HOME` 优先 |
+| `workspace-test.mjs` | 工作区目录解析（含"挑真有记忆的工作区而非 `defaultWorkspaceId`"）+ **恢复路径映射**：`DSH_HOME` 缺失时（桌面壳启动的宿主就是这样）也必须能映射，且显式 `DSH_HOME` 优先；`..`、绝对路径、盘符、反斜杠等恢复路径一律拒绝 |
 | `server-test.mjs` | 把 `lib/server.mjs` 当进程起起来，用真实 HTTP 走页面与全部接口（含真实恢复），验证密码**确实写进** `.credentials.yaml` 且没落明文文件，并用**裸 socket** 伪造 Host 验证"仅本机" |
 | `profile-resolution-test.mjs` | 预检：按 `dsh-app-boot` 的解析方式确认 profile 里登记的 bundle 能被解析、patch 与两半入口齐备 |
 | `package-check.mjs` | 发布前自检：元数据齐全、`private` 未开、`dsh.bundle.patch` 存在且 name 对得上、`dsh.client.platform === 'web'`、`exports["./client"]` 是传统脚本且只 require 种子模块、`dsh.client.inject` 里的包在 asar 里真实存在、打包内容不含测试与 node_modules |
@@ -347,8 +350,7 @@ node test/run-all.mjs
 { "files": 58, "uploaded": 0, "unchanged": 58, "unchangedByMetadata": 58, "hashed": 0 }
 ```
 
-**升级是平滑的**：老清单里没有 `sha256` 字段时回落到"大小相同即未变"，
-所以第一次带哈希的备份不会突然全量重传；从那一轮起清单里就有哈希了（恢复时也能校验内容，而不只是长度）。
+**升级时宁可重传一次**：老清单里没有 `sha256` 字段时，不能拿"大小相同"当没变——否则升级前等长改过的文件会被写上新哈希、云端却停在旧内容，之后永远不传。现在的策略是：只要清单缺 `sha256`，就把该文件当 pending 重传一次；第一轮之后清单里就有哈希了（恢复时也会用哈希校验内容，而不只是长度）。
 
 **失败不更新清单**：有文件传失败时 manifest 保持上一轮，下一轮把失败的重新当 pending 重试，
 不会谎称"已经在云端了"。
@@ -373,8 +375,9 @@ node test/run-all.mjs
   用例见 `mock-dav-test.mjs` 的 `[12] 上传传到一半断线`。
 - **内容级校验**：备份后逐文件比对本机与远端的 sha256（只比长度不够——"写了一半""重试丢内容"这类问题会漏过）。
 - **上传下载都流式**：不再把文件整份读进内存（会话 jsonl 可以很大）；
-- **恢复不写坏文件**：先写 `<目标>.nbpart-<pid>`，校验字节数与 manifest 一致后再改名覆盖；
-  字节数对不上就报错并清掉临时文件，宁可这次不恢复，也不留一个被截断的会话文件；
+- **恢复不写坏文件**：先写 `<目标>.nbpart-<pid>`，同时校验字节数与 manifest 的 `sha256`，都一致才改名覆盖；
+  任一校验失败就报错并清掉临时文件，宁可这次不恢复，也不留一个被截断或内容损坏的会话文件；
+  本地文件与 manifest 大小相同但内容不同时，也会按哈希判断后覆盖（不再只看大小）；
   覆盖前原文件会拷到 `restore-trash/`；
 - **失败不更新 manifest**：有文件传失败时清单保持上一轮，下一轮会把它们重新当 pending 重试，
   不会谎称"已经在云端了"（失败记账写在 `$DSH_HOME/nutstore-backup/last-failed.json`）。
@@ -396,7 +399,8 @@ node test/run-all.mjs
 - **设置页需要重启 DSH 才出现**（客户端 bundle 表启动时组成），host 半区不用；
 - **应用密码存的是明文**（在 0600 的凭据文件里），这是 DSH 凭据服务的现有实现，不是本插件的选择；
 - 恢复会**覆盖**本机同名文件，覆盖前的副本在 `$DSH_HOME/nutstore-backup/restore-trash/`；
-  恢复后建议重启 DSH，让会话索引与设置重新加载；
+  恢复前会拒绝 manifest 里的 `..`、绝对路径、盘符、反斜杠等不安全路径，并校验对象名与相对路径一致
+  （manifest 来自远端，按不可信输入处理）；恢复后建议重启 DSH，让会话索引与设置重新加载；
 - 备份的是**文件**，不导出 SQLite 投影缓存（`storages/session_projcache` 会按需重建）；
 - 恢复到的路径按**本机当前**的 `$DSH_HOME` / `$DSH_PROFILE_DIR` / 工作区重算，所以两台机器上的
   用户名或盘符不同也能对上。
