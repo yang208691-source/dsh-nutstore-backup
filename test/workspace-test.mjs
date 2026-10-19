@@ -211,6 +211,27 @@ console.log('\n[9] 恢复路径拒绝穿越')
   check('以 .. 开头的正常文件名不被误杀', typeof dotDotName === 'string' && dotDotName.endsWith('..notes.txt'), String(dotDotName))
 }
 
+console.log('\n[10] 额外路径原位恢复')
+{
+  const backup = await import(lib('backup.mjs'))
+  makeHome('extra-paths', undefined)
+  const extraDir = path.join(sandbox, 'extra-memory')
+  const extraFile = path.join(sandbox, 'extra-profile.txt')
+  fs.mkdirSync(extraDir, { recursive: true })
+  fs.writeFileSync(extraFile, 'profile\n')
+  const pluginConfig = { workspaceDir: path.join(sandbox, 'extra-ws'), extraPaths: [extraDir, extraFile] }
+
+  const dirTarget = backup.restoreTarget('extra-0/memory/MEMORY.md', pluginConfig)
+  check('额外目录落回配置的原路径', dirTarget === path.join(extraDir, 'memory', 'MEMORY.md'), String(dirTarget))
+  const fileTarget = backup.restoreTarget('extra-file-1/extra-profile.txt', pluginConfig)
+  check('额外文件落回配置的原始文件', fileTarget === extraFile, String(fileTarget))
+
+  const fallbackDir = backup.restoreTarget('extra-0/memory/MEMORY.md', { ...pluginConfig, extraPaths: [] })
+  check('配置里没有该项时退回 restored-extra', String(fallbackDir).includes(path.join('nutstore-backup', 'restored-extra')), String(fallbackDir))
+  const fallbackFile = backup.restoreTarget('extra-file-9/x.txt', { ...pluginConfig, extraPaths: [] })
+  check('额外文件序号对不上时也退回 restored-extra', String(fallbackFile).includes(path.join('nutstore-backup', 'restored-extra')), String(fallbackFile))
+}
+
 fs.rmSync(sandbox, { recursive: true, force: true })
 
 if (failures.length > 0) {

@@ -608,6 +608,34 @@ console.log('\n[13] 旧快照保护：本机比云端新的文件不覆盖')
   await runBackup({ client, config })
 }
 
+console.log('\n[14] extraPaths：备份后能原位恢复')
+{
+  const extraDir = path.join(sandbox, 'extra-memory')
+  const extraFile = path.join(sandbox, 'extra-profile.txt')
+  fs.mkdirSync(path.join(extraDir, 'nested'), { recursive: true })
+  fs.writeFileSync(path.join(extraDir, 'nested', 'MEMORY.md'), '# memory\n')
+  fs.writeFileSync(extraFile, 'profile\n')
+
+  const extraConfig = {
+    ...config,
+    machine: 'extra-machine',
+    extraPaths: [extraDir, extraFile],
+  }
+  const extraBackup = await runBackup({ client, config: extraConfig })
+  check('额外路径被扫描并上传', extraBackup.ok === true && extraBackup.uploaded >= 2, `uploaded=${extraBackup.uploaded}`)
+
+  fs.rmSync(extraDir, { recursive: true, force: true })
+  fs.rmSync(extraFile, { force: true })
+
+  const extraRestore = await runRestore({ client, config: extraConfig })
+  check('额外目录恢复到配置的原路径', fs.readFileSync(path.join(extraDir, 'nested', 'MEMORY.md'), 'utf8') === '# memory\n', JSON.stringify(extraRestore.failed))
+  check('额外文件恢复到配置的原路径', fs.readFileSync(extraFile, 'utf8') === 'profile\n', JSON.stringify(extraRestore.failed))
+  check('没有落到 restored-extra', !fs.existsSync(path.join(dshHome, 'nutstore-backup', 'restored-extra', 'nested', 'MEMORY.md')))
+
+  fs.rmSync(extraDir, { recursive: true, force: true })
+  fs.rmSync(extraFile, { force: true })
+}
+
 console.log(`\n请求统计：${requests.count} 次 ${JSON.stringify(requests.byMethod)}`)
 
 // 收尾必须真的关掉 mock 服务器：否则 http.Server 会一直让事件循环活着，

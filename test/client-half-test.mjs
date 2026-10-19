@@ -362,6 +362,39 @@ mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, mounted.
 check('接口报错时把错误显示出来（而不是静默）', mounted.html.includes('认证失败'), '')
 check('未登录时按钮不会因渲染而爆栈', mounted.html.includes('坚果云备份'))
 
+console.log('\n[9b] 额外路径：显示、添加、保存')
+statePayload = {
+  ok: true,
+  loggedIn: false,
+  password: { service: 'available', configured: false, label: '未登录：还没有保存应用密码' },
+  config: {
+    server: 'https://dav.jianguoyun.com/dav',
+    account: '',
+    remoteRoot: '/dsh-backup',
+    machine: 'my-pc',
+    workspaceDir: '/tmp/example-workspace',
+    extraPaths: ['/tmp/my-memory'],
+    sources: { sessions: true, profileConfig: true, workspaceMemory: true, pluginSource: true },
+  },
+  sources: { machine: 'my-pc', remoteDir: '/dsh-backup/my-pc', files: 52, bytes: 640000, roots: [], skipped: [] },
+}
+mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, undefined)
+await new Promise(resolve => setTimeout(resolve, 30))
+mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, mounted.instance)
+check('界面显示额外路径', mounted.html.includes('额外路径') && mounted.html.includes('/tmp/my-memory'), '')
+const extraInput = hostRegistry.find(node => node.tag === 'input' && String(node.attributes.placeholder ?? '').includes('绝对路径'))
+check('找得到额外路径输入框', extraInput !== undefined, findButtons().map(button => button.text).join('|'))
+extraInput?.attributes.onChange?.({ target: { value: 'D:\\ExtraMemory' } })
+mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, mounted.instance)
+buttonByText('添加')?.attributes.onClick?.()
+mounted = mount(slotRegistrations[0].component, { t, close: () => {} }, mounted.instance)
+check('添加后路径出现在列表', mounted.html.includes('D:\\ExtraMemory'), '')
+buttonByText('保存并登录')?.attributes.onClick?.()
+await new Promise(resolve => setTimeout(resolve, 40))
+const extraConfigCall = [...requests].reverse().find(request => request.url === '/dsh-nutstore/config')
+const extraPatch = extraConfigCall === undefined ? {} : JSON.parse(extraConfigCall.body).patch
+check('保存请求带上了 extraPaths', Array.isArray(extraPatch.extraPaths) && extraPatch.extraPaths.includes('D:\\ExtraMemory'), JSON.stringify(extraPatch.extraPaths))
+
 console.log('\n[10] 降低"翻菜单 + 粘贴"摩擦的登录引导')
 statePayload = {
   ok: true,
